@@ -106,6 +106,7 @@ impl Arg {
 	pub fn set_default(&mut self, default: String) -> &mut Arg {
 
 		self.default = Some(default);
+		self.required = false;
 
 		self
 
@@ -301,6 +302,12 @@ impl App {
 		for arg in self.args.iter_mut().filter(|arg| !arg.completed && arg.environment.is_some()) {
 
 			if env::var(arg.environment.as_ref().expect("Checked during the iter filter")).is_ok() {
+				if let Some(default) = &arg.default {
+					output.insert(arg.name.clone(), Some(default.clone()));
+				} else {
+					output.insert(arg.name.clone(), None);
+				}
+				arg.completed = true;
 
 			}
 
@@ -312,7 +319,10 @@ impl App {
 			return Err(RequiredArgumentMissing(required_missing.iter().map(|arg| arg.name.clone()).collect()));
 		}
 
-		// TODO fill default values
+		for arg in self.args.iter_mut().filter(|arg| !arg.is_completed() && arg.default.is_some()) {
+			output.insert(arg.name.clone(), Some(arg.default.expect("Validated in the iter filter")));
+			arg.completed = true;
+		}
 
 		self.clear_args();
 
