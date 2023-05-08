@@ -2,8 +2,7 @@
 //! It's designed to be lightweight and straightforward to use
 
 use crate::Error::{
-	DuplicateArgument, MissingArgumentValue, RequiredArgumentMissing, TooFewArguments,
-	TooManyArguments,
+	DuplicateArgument, MissingArgumentValue, RequiredArgumentMissing, TooManyArguments,
 };
 use std::collections::HashMap;
 use std::fmt::Formatter;
@@ -24,6 +23,7 @@ fn collect_strs(vec: &Vec<String>, delimiter: &str) -> String {
 	string
 }
 
+#[derive(Debug)]
 pub struct Arg {
 	name: String,
 	short: Option<Vec<String>>,
@@ -62,6 +62,22 @@ impl fmt::Display for Arg {
 		write!(f, "{}", &str)
 	}
 }
+
+// We're putting this here for debug purposes
+// TODO refactor the above block to use a better method
+// impl Arg {
+// fn dbg_str(&self) -> String {
+// let mut str = String::new();
+
+// str.push('{');
+// str.push_str(&self.name.clone());
+// str.push_str(", ");
+// str.push_str(self.completed.to_string().as_str());
+// str.push('}');
+
+// str
+// }
+// }
 
 impl Arg {
 	pub fn new(name: &str) -> Arg {
@@ -298,10 +314,12 @@ impl App {
 		output.insert("path".to_string(), args.next().unwrap_or(".\\".to_string()));
 
 		while let Some(input) = args.next() {
+			let input = input.trim().to_string();
 			if let Some(arg) = self.match_arg(&input) {
 				if arg.is_completed() {
 					return Err(DuplicateArgument(arg.name.clone()));
 				}
+				// println!("{}", arg.dbg_str());
 				arg.set_completed(); // As far as I know, there's no reason that this shouldnt go
 					 // here, no reason it should need to be at the end of this if
 					 // case, but I'll leave this note here just in case it causes
@@ -329,10 +347,6 @@ impl App {
 			} else {
 				return Err(TooManyArguments(input));
 			}
-		}
-
-		if untagged_req < (self.untagged_args_req.len() - 1) as i32 {
-			return Err(TooFewArguments);
 		}
 
 		for arg in self
@@ -396,11 +410,6 @@ impl App {
 			Ok(val) => val,
 			Err(error) => {
 				match error {
-					TooFewArguments => {
-						eprintln!("Too few arguments!\n");
-						self.print_help();
-						process::exit(1);
-					}
 					TooManyArguments(str) => {
 						eprintln!("You entered too many arguments, '{str}' was unexpected.\n");
 						self.print_help();
@@ -487,7 +496,6 @@ impl App {
 
 #[derive(Debug)]
 enum Error {
-	TooFewArguments,
 	TooManyArguments(String),
 	MissingArgumentValue(String),
 	DuplicateArgument(String),
@@ -495,143 +503,4 @@ enum Error {
 }
 
 #[cfg(test)]
-mod tests {
-
-	use super::*;
-
-	fn generate_test_app() -> App {
-		let mut app = App::new("Test");
-		app.pretty_name("Test App")
-			.version("1.0")
-			.about("A test app to make sure everything is working for my argument parsing library")
-			.author("Cameron Barnes, Cameron_barnes@outlook.com")
-			.untagged_required_arg("first_input")
-			.untagged_optional_arg("optional_second_input")
-			.arg(
-				Arg::new("TestArg")
-					.add_short("-vv")
-					.help("Help text for this flag"),
-			)
-			.arg(Arg::new("TestArg2").add_short("-f").add_long("-flag"))
-			.arg(
-				Arg::new("TestArg3")
-					.add_short("-1")
-					.add_short("-2")
-					.add_short("-3")
-					.add_long("-one")
-					.add_long("-two")
-					.help("Help info here!"),
-			)
-			.arg(
-				Arg::new("HasValue")
-					.add_short("-v")
-					.add_long("-value")
-					.accepts_value()
-					.help("A command line option that accepts a value"),
-			)
-			.arg(
-				Arg::new("HasDefault")
-					.add_short("-d")
-					.add_long("--default")
-					.accepts_value()
-					.set_default("Default Value")
-					.help("Default Value Parameter"),
-			);
-
-		app
-	}
-
-	#[test]
-	fn test_required_and_optional_argument_parsing() {
-		// Build the test app
-		let mut app = generate_test_app();
-
-		// First we're going to test it with just the required and optional input, normally these
-		// values would get pulled from the program environment
-		let demo_input = vec![
-			"Program Path goes here".to_string(),
-			"First Required Input Goes Here".to_string(),
-			"Optional Input Here".to_string(),
-		];
-
-		let result = app.parse_internal(demo_input.into_iter()).ok().unwrap();
-
-		// This should parse out the first required value, which should be the second item in the
-		// demo_input vector
-		assert_eq!(
-			result.get("first_input").take().unwrap(),
-			"First Required Input Goes Here"
-		);
-
-		// This should parse out the first optional value, which should be the third item in the
-		// demo_input vector
-		assert_eq!(
-			result.get("optional_second_input").take().unwrap(),
-			"Optional Input Here"
-		);
-	}
-
-	#[test]
-	fn test_required_and_flag_parsing() {
-		let mut app = generate_test_app();
-
-		// This should result in parsing out the required argument and the provided flag, but not
-		// the optional argument
-		let demo_input = vec![
-			"Program Path goes here".to_string(),
-			"Required Arg".to_string(),
-			"-vv".to_string(),
-		];
-
-		let result = app.parse_internal(demo_input.into_iter()).ok().unwrap();
-
-		assert_eq!(result.get("first_input").take().unwrap(), "Required Arg");
-
-		assert!(!result.contains_key("optional_second_input"));
-
-		assert_eq!(result.get("TestArg").take().unwrap(), "true");
-	}
-
-	#[test]
-	fn test_default_value_parameters() {
-		let mut app = generate_test_app();
-
-		// We expect this to have a result for the default value equal to the set default value in
-		// the app spec, in this case "Default Value"
-		let demo_input = vec![
-			"Program Path Here".to_string(),
-			"Required Arg Here".to_string(),
-		];
-
-		let result = app.parse_internal(demo_input.into_iter()).ok().unwrap();
-
-		assert_eq!(result.get("HasDefault").take().unwrap(), "Default Value");
-
-		// We expect this one to return the same value as above, but this one is much more likely
-		// to break if something goes wrong
-		let demo_input = vec![
-			"Program Path Here".to_string(),
-			"Required Arg Here".to_string(),
-			"--default".to_string(),
-		];
-
-		let result = app.parse_internal(demo_input.into_iter()).ok().unwrap();
-
-		assert_eq!(result.get("HasDefault").take().unwrap(), "Default Value");
-
-		// This one should have "Alternative Value Here" instead of "Default Value"
-		let demo_input = vec![
-			"Program Path Here".to_string(),
-			"Required Arg Here".to_string(),
-			"--default".to_string(),
-			"Alternative Value Here".to_string(),
-		];
-
-		let result = app.parse_internal(demo_input.into_iter()).ok().unwrap();
-
-		assert_eq!(
-			result.get("HasDefault").take().unwrap(),
-			"Alternative Value Here"
-		);
-	}
-}
+mod tests;
