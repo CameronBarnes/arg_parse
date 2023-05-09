@@ -43,6 +43,12 @@ fn generate_test_app() -> App {
 }
 
 #[test]
+#[ignore = "For Manual Testing Only"]
+fn test_help() {
+	generate_test_app().print_help();
+}
+
+#[test]
 fn test_required_and_optional_argument_parsing() {
 	// Build the test app
 	let mut app = generate_test_app();

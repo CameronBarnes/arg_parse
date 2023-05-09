@@ -491,12 +491,17 @@ impl App {
 			print!("  Version: {version}")
 		}
 		if let Some(author) = &self.author {
-			print!("\tAuthor: {author}");
+			if self.version.is_some() {
+				print!("\t");
+			} else {
+				print!("  ");
+			}
+			print!("Author: {author}");
 		}
 
 		println!();
 		if let Some(about) = &self.about {
-			println!("{about}\n");
+			println!("\n{about}\n");
 		}
 
 		println!("USAGE:\titems marked with * are optional\n");
@@ -513,10 +518,41 @@ impl App {
 			println!("Options: ");
 		}
 
-		// Print out each arg
-		self.args.iter().for_each(|arg| {
-			println!("{}", arg.to_string());
-		})
+		// This next bit needs to be a little bit complicated as we need to first get the maximum
+		// string size for each arg so that we can pad the printed strings
+		let mut short_min = 0;
+		let mut long_min = 0;
+		let mut accepts_value = false;
+
+		for arg in &self.args {
+			let (short, long, value, _) = arg.get_arg_info();
+
+			if short.len() > short_min {
+				short_min = short.len();
+			}
+
+			if long.len() > long_min {
+				long_min = long.len();
+			}
+
+			if value {
+				accepts_value = true;
+			}
+		}
+
+		// Now we get to actually print out the values, making sure to pad them
+		for arg in &self.args {
+			let (short, long, value, help) = arg.get_arg_info();
+
+			print!("{:short_min$}  ", short);
+			print!("{:long_min$}  ", long);
+			if value {
+				print!("(accepts value)  ");
+			} else if accepts_value {
+				print!("{:width$}  ", "", width = 15);
+			}
+			println!("{help}");
+		}
 	}
 }
 
