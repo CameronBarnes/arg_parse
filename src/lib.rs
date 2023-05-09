@@ -36,48 +36,67 @@ pub struct Arg {
 	default: Option<String>,
 }
 
+impl Arg {
+	fn get_arg_info(&self) -> (String, String, bool, String) {
+		let mut str_s = String::new();
+		let mut str_l = String::new();
+		let mut str_h = String::new();
+
+		if let Some(short) = &self.short {
+			str_s.push_str(&collect_strs(short, ","));
+		}
+
+		if let Some(long) = &self.long {
+			str_l.push_str(&collect_strs(long, ","));
+		}
+
+		if let Some(help) = &self.help {
+			str_h.push_str(help);
+		}
+
+		(str_s, str_l, self.accepts_value, str_h)
+	}
+}
+
 impl fmt::Display for Arg {
 	fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
 		let mut str = String::new();
 
-		if let Some(short) = &self.short {
-			str.push_str("  "); // We need a little bit of padding here
-			str.push_str(&collect_strs(short, ","));
-		}
-		str.push('\t');
+		let (short, long, value, help) = self.get_arg_info();
 
-		if let Some(long) = &self.long {
-			str.push_str(&collect_strs(long, ","));
-		}
-		str.push('\t');
+		let mut previous = false;
 
-		if self.accepts_value {
-			str.push_str("(value)\t");
+		if !short.is_empty() {
+			str.push_str(&short);
+			previous = true;
 		}
 
-		if let Some(help) = &self.help {
-			str.push_str(help);
+		if !long.is_empty() {
+			if previous {
+				str.push('\t');
+			}
+			str.push_str(&long);
+			previous = true;
+		}
+
+		if value {
+			if previous {
+				str.push('\t');
+			}
+			str.push_str("(accepts value)");
+			previous = true;
+		}
+
+		if !help.is_empty() {
+			if previous {
+				str.push('\t');
+			}
+			str.push_str(&help);
 		}
 
 		write!(f, "{}", &str)
 	}
 }
-
-// We're putting this here for debug purposes
-// TODO refactor the above block to use a better method
-// impl Arg {
-// fn dbg_str(&self) -> String {
-// let mut str = String::new();
-
-// str.push('{');
-// str.push_str(&self.name.clone());
-// str.push_str(", ");
-// str.push_str(self.completed.to_string().as_str());
-// str.push('}');
-
-// str
-// }
-// }
 
 impl Arg {
 	pub fn new(name: &str) -> Arg {
@@ -254,11 +273,16 @@ impl App {
 	pub fn arg(&mut self, arg: Arg) -> &mut App {
 		// Check for the user manually setting up a help or version flag flag, though they probably wont do this as that's kinda the point of this library
 
-		if App::is_manual_help(arg.short.as_ref()) | App::is_manual_help(arg.long.as_ref()) {
+		if !self.manual_help_flag
+			&& (App::is_manual_help(arg.short.as_ref()) | App::is_manual_help(arg.long.as_ref()))
+		{
 			self.manual_help_flag = true;
 		}
 
-		if App::is_manual_version(arg.short.as_ref()) | App::is_manual_version(arg.long.as_ref()) {
+		if !self.manual_version_flag
+			&& (App::is_manual_version(arg.short.as_ref())
+				| App::is_manual_version(arg.long.as_ref()))
+		{
 			self.manual_version_flag = true;
 		}
 
@@ -313,6 +337,8 @@ impl App {
 		// We're always going to put the path of the executable in here, just in case
 		output.insert("path".to_string(), args.next().unwrap_or(".\\".to_string()));
 
+		// TODO Ideally I'd like to clean this up eventually, there's more going on in one place
+		// here than I'd like, makes it a pain to debug
 		while let Some(input) = args.next() {
 			let input = input.trim().to_string();
 			if let Some(arg) = self.match_arg(&input) {
