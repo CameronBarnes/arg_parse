@@ -1,15 +1,16 @@
 //! This crate is for parsing command line and environment parameters.
 //! It's designed to be lightweight and straightforward to use
 
-use crate::Error::{
-	DuplicateArgument, MissingArgumentValue, RequiredArgumentMissing, TooManyArguments,
+use crate::ArgumentError::{
+	DuplicateArgumentError, MissingArgumentValueError, RequiredArgumentMissingError,
+	TooManyArgumentsError,
 };
 use std::collections::HashMap;
-use std::fmt::Formatter;
+use std::fmt::{Display, Formatter};
 use std::{env, fmt, process};
 
-// Accepts a reference to a vactor of Strings and a delimeter. Returns a String with all the
-// provided strings concatenated together with the delimeter string separating them
+/// Accepts a reference to a vactor of Strings and a delimeter. Returns a String with all the
+/// provided strings concatenated together with the delimeter string separating them
 fn collect_strs(vec: &Vec<String>, delimiter: &str) -> String {
 	let mut string = String::new();
 
@@ -23,7 +24,7 @@ fn collect_strs(vec: &Vec<String>, delimiter: &str) -> String {
 	string
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Arg {
 	name: String,
 	short: Option<Vec<String>>,
@@ -37,7 +38,7 @@ pub struct Arg {
 }
 
 impl Arg {
-	fn get_arg_info(&self) -> (String, String, bool, String) {
+	fn arg_info(&self) -> (String, String, bool, String) {
 		let mut str_s = String::new();
 		let mut str_l = String::new();
 		let mut str_h = String::new();
@@ -62,7 +63,7 @@ impl fmt::Display for Arg {
 	fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
 		let mut str = String::new();
 
-		let (short, long, value, help) = self.get_arg_info();
+		let (short, long, value, help) = self.arg_info();
 
 		let mut previous = false;
 
@@ -303,7 +304,7 @@ impl App {
 		self
 	}
 
-	fn get_arg(&mut self, name: &str) -> Option<&mut Arg> {
+	fn find_arg(&mut self, name: &str) -> Option<&mut Arg> {
 		self.args.iter_mut().find(|arg| arg.name.eq(name))
 	}
 
@@ -326,7 +327,7 @@ impl App {
 	fn parse_internal(
 		&mut self,
 		args: impl Iterator<Item = String>,
-	) -> Result<HashMap<String, String>, Error> {
+	) -> Result<HashMap<String, String>, ArgumentError> {
 		let mut args = args.peekable();
 
 		let mut output: HashMap<String, String> = HashMap::new();
@@ -343,7 +344,7 @@ impl App {
 			let input = input.trim().to_string();
 			if let Some(arg) = self.match_arg(&input) {
 				if arg.is_completed() {
-					return Err(DuplicateArgument(arg.name.clone()));
+					return Err(DuplicateArgumentError(arg.clone()));
 				}
 				// println!("{}", arg.dbg_str());
 				arg.set_completed(); // As far as I know, there's no reason that this shouldnt go
@@ -359,7 +360,11 @@ impl App {
 					} else if let Some(default) = arg.default.clone() {
 						output.insert(arg_name, default);
 					} else {
-						return Err(MissingArgumentValue(arg_name));
+						return Err(MissingArgumentValueError(
+							self.find_arg(&arg_name)
+								.expect("This value should come from a valid arg")
+								.clone(),
+						));
 					}
 				} else {
 					output.insert(arg.name.clone(), "true".to_string());
@@ -371,7 +376,7 @@ impl App {
 				output.insert(self.untagged_args_opt[untagged_opt as usize].clone(), input);
 				untagged_opt += 1;
 			} else {
-				return Err(TooManyArguments(input));
+				return Err(TooManyArgumentsError(input));
 			}
 		}
 
@@ -403,10 +408,10 @@ impl App {
 			.collect();
 
 		if !required_missing.is_empty() {
-			return Err(RequiredArgumentMissing(
+			return Err(RequiredArgumentMissingError(
 				required_missing
-					.iter()
-					.map(|arg| arg.name.clone())
+					.into_iter()
+					.map(|arg| arg.clone())
 					.collect(),
 			));
 		}
@@ -435,46 +440,9 @@ impl App {
 		match self.parse_internal(args) {
 			Ok(val) => val,
 			Err(error) => {
-				match error {
-					TooManyArguments(str) => {
-						eprintln!("You entered too many arguments, '{str}' was unexpected.\n");
-						self.print_help();
-						process::exit(1);
-					}
-					MissingArgumentValue(name) => {
-						eprintln!("User failed to provide value for the following argument: ");
-						eprintln!(
-							"{}\n",
-							self.get_arg(&name)
-								.expect("This value should come from a valid arg")
-						);
-						self.print_help();
-						process::exit(1);
-					}
-					DuplicateArgument(name) => {
-						eprintln!("User provided the following argument twice: ");
-						eprintln!(
-							"{}\n",
-							self.get_arg(&name)
-								.expect("This value should come from a valid arg")
-						);
-						self.print_help();
-						process::exit(1);
-					}
-					RequiredArgumentMissing(names) => {
-						eprintln!("User did not provide one or more of the following required arguments: ");
-						for name in names {
-							eprintln!(
-								"{}",
-								self.get_arg(&name)
-									.expect("This value should come from a valid arg")
-							);
-						}
-						eprintln!("\n");
-						self.print_help();
-						process::exit(1);
-					}
-				}
+				eprintln!("{}", error);
+				self.print_help();
+				process::exit(1);
 			}
 		}
 	}
@@ -525,7 +493,7 @@ impl App {
 		let mut accepts_value = false;
 
 		for arg in &self.args {
-			let (short, long, value, _) = arg.get_arg_info();
+			let (short, long, value, _) = arg.arg_info();
 
 			if short.len() > short_min {
 				short_min = short.len();
@@ -542,7 +510,7 @@ impl App {
 
 		// Now we get to actually print out the values, making sure to pad them
 		for arg in &self.args {
-			let (short, long, value, help) = arg.get_arg_info();
+			let (short, long, value, help) = arg.arg_info();
 
 			print!("{:short_min$}  ", short);
 			print!("{:long_min$}  ", long);
@@ -557,11 +525,54 @@ impl App {
 }
 
 #[derive(Debug)]
-enum Error {
-	TooManyArguments(String),
-	MissingArgumentValue(String),
-	DuplicateArgument(String),
-	RequiredArgumentMissing(Vec<String>),
+enum ArgumentError {
+	TooManyArgumentsError(String),
+	MissingArgumentValueError(Arg),
+	DuplicateArgumentError(Arg),
+	RequiredArgumentMissingError(Vec<Arg>),
+}
+
+impl std::error::Error for ArgumentError {
+	fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+		None
+	}
+
+	fn description(&self) -> &str {
+		"description() is deprecated; use Display"
+	}
+
+	fn cause(&self) -> Option<&dyn std::error::Error> {
+		self.source()
+	}
+}
+
+impl Display for ArgumentError {
+	fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+		match self {
+			TooManyArgumentsError(str) => write!(
+				f,
+				"You entered too many arguments, '{}' was unexpected.",
+				str
+			),
+			MissingArgumentValueError(arg) => write!(
+				f,
+				"User failed to provide value for the following argument:\n{}",
+				arg
+			),
+			DuplicateArgumentError(arg) => {
+				write!(f, "User provided the following argument twice:\n{}", arg)
+			}
+			RequiredArgumentMissingError(args) => {
+				let mut str = String::new();
+				str.push_str(
+					"User did not provide one or more of the following required arguments:\n",
+				);
+				args.into_iter()
+					.for_each(|arg| str.push_str(&arg.to_string()));
+				write!(f, "{}", str)
+			}
+		}
+	}
 }
 
 #[cfg(test)]

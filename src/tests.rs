@@ -158,6 +158,6 @@ fn test_fail_duplicate_params() {
 
 	assert!(matches!(
 		result.err().unwrap(),
-		Error::DuplicateArgument { .. }
+		ArgumentError::DuplicateArgumentError { .. }
 	));
 }

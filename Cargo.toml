@@ -1,8 +1,9 @@
 [package]
 name = "arg_parse"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+authors = ["Cameron Barnes <cameron_barnes@outlook.com>"]
+repository = "https://github.com/CameronBarnes/arg_parse"
+categories = ["command-line-interface", "config"]
 
 [dependencies]
